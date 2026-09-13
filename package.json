@@ -1,0 +1,15 @@
+{
+  "name": "infrlo-vless",
+  "version": "1.0.0",
+  "description": "VLESS over WebSocket for PaaS deployment",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
