@@ -8,7 +8,7 @@ const SUB_TOKEN = process.env.SUB_TOKEN || "";
 const startTime = Date.now();
 
 const rawUUIDs = (process.env.UUID || "").split(",").map(s => s.trim()).filter(Boolean);
-if (rawUUIDs.length === 0) for (let i = 0; i < 5; i++) rawUUIDs.push(crypto.randomUUID());
+if (rawUUIDs.length === 0) rawUUIDs.push(crypto.randomUUID());
 const UUID_LIST = rawUUIDs.slice(0, 5);
 
 const nodes = UUID_LIST.map((uuid, i) => ({
