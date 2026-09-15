@@ -158,47 +158,42 @@ const server = http.createServer((req, res) => {
 });
 
 // ── QR Code generator ───────────────────────────────
-const QRCode = require("qrcode");
+// QR codes generated client-side via qrserver API (no server deps)
 
 // ── Apple-style Admin Panel ─────────────────────────
 function servePanel(res, host) {
-  const qrData = nodes.map(n => buildVlessLink(n.uuid, host, n.path, n.name));
   const clashSubUrl = `https://${host}/sub?format=clash`;
   const vlessSubUrl = `https://${host}/sub`;
-  
-  // QR codes: one for Clash sub URL, one per VLESS node
-  const qrPromises = [QRCode.toString(clashSubUrl, { type: "svg", margin: 1, width: 200, color: { dark: "#1d1d1f", light: "#ffffff" } })];
-  qrData.forEach(link => qrPromises.push(QRCode.toString(link, { type: "svg", margin: 1, width: 200, color: { dark: "#1d1d1f", light: "#ffffff" } })));
-  
-  Promise.all(qrPromises).then(qrSvgs => {
-    const clashQR = qrSvgs[0];
-    const nodeQRs = qrSvgs.slice(1);
+  const tokenParam = SUB_TOKEN ? `&token=${SUB_TOKEN}` : "";
 
-    const nodeCards = nodes.map((n, i) => `
-      <div class="card">
-        <div class="card-header">
-          <span class="badge">${nodes.length > 1 ? `Node ${i + 1}` : "Active"}</span>
-          <span class="path-mono">${n.path}</span>
-        </div>
-        <div class="card-body">
-          <div class="qr-wrap">${nodeQRs[i]}</div>
-          <div class="node-info">
-            <div class="info-row">
-              <span class="label">UUID</span>
-              <code class="uuid" title="${n.uuid}">${n.uuid.slice(0, 8)}⋯${n.uuid.slice(-4)}</code>
-              <button class="btn-copy" onclick="cp('${n.uuid}')">拷贝</button>
-            </div>
-            <div class="info-row">
-              <span class="label">VLESS</span>
-              <button class="btn-copy" onclick="cp('${buildVlessLink(n.uuid, host, n.path, n.name).replace(/'/g, "\\'")}')">拷贝链接</button>
-            </div>
+  function qrImg(data) {
+    const enc = encodeURIComponent(data);
+    return `<img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${enc}" width="100" height="100" alt="QR" style="display:block">`;
+  }
+
+  const nodeCards = nodes.map((n, i) => `
+    <div class="card">
+      <div class="card-header">
+        <span class="badge">${nodes.length > 1 ? `Node ${i + 1}` : "Active"}</span>
+        <span class="path-mono">${n.path}</span>
+      </div>
+      <div class="card-body">
+        <div class="qr-wrap">${qrImg(buildVlessLink(n.uuid, host, n.path, n.name))}</div>
+        <div class="node-info">
+          <div class="info-row">
+            <span class="label">UUID</span>
+            <code class="uuid" title="${n.uuid}">${n.uuid.slice(0, 8)}⋯${n.uuid.slice(-4)}</code>
+            <button class="btn-copy" onclick="cp('${n.uuid}')">拷贝</button>
+          </div>
+          <div class="info-row">
+            <span class="label">VLESS</span>
+            <button class="btn-copy" onclick="cp('${buildVlessLink(n.uuid, host, n.path, n.name).replace(/'/g, "\\'")}')">拷贝链接</button>
           </div>
         </div>
-      </div>`).join("");
+      </div>
+    </div>`).join("");
 
-    const tokenParam = SUB_TOKEN ? `&token=${SUB_TOKEN}` : "";
-
-    const html = `<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta charset="utf-8">
@@ -372,7 +367,6 @@ fetch("/status").then(r => r.json()).then(s => {
 
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(html);
-  });
 }
 
 // ── VLESS link builder ──────────────────────────────
