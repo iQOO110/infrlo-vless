@@ -3,9 +3,22 @@ const net = require("net");
 const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
-const PORT = process.env.PORT || 3000;
+// Infrlo sometimes injects PORT, sometimes doesn't. Try multiple sources.
+const PORT = process.env.PORT || process.env.HTTP_PORT || process.env.APP_PORT || 3000;
 const UUID = (process.env.UUID || crypto.randomUUID()).toLowerCase();
 const WS_PATH = process.env.WS_PATH || "/vless";
+
+// Debug: log all env vars on startup (exclude secrets)
+const safeEnv = {};
+for (const k of Object.keys(process.env).sort()) {
+  const v = process.env[k];
+  if (k.toLowerCase().includes('key') || k.toLowerCase().includes('secret') || k.toLowerCase().includes('token') || k.toLowerCase().includes('pass')) {
+    safeEnv[k] = '***';
+  } else {
+    safeEnv[k] = v;
+  }
+}
+console.log('ENV:', JSON.stringify(safeEnv, null, 2));
 
 function uuidToBytes(uuid) {
   return Buffer.from(uuid.replace(/-/g, ""), "hex");
@@ -40,6 +53,12 @@ const server = http.createServer((req, res) => {
     const base64 = Buffer.from(link).toString("base64");
     res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
     res.end(base64);
+    return;
+  }
+
+  if (req.url === "/env") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ PORT, UUID: '***', WS_PATH, env: safeEnv }));
     return;
   }
 
