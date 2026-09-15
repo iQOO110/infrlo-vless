@@ -22,6 +22,23 @@ const server = http.createServer((req, res) => {
 
   if (req.url === "/sub") {
     const host = req.headers.host || `localhost:${PORT}`;
+    if (req.url.includes("format=clash")) {
+      res.writeHead(200, { "Content-Type": "text/yaml; charset=utf-8" });
+      return res.end([
+        "mixed-port: 7890","allow-lan: false","mode: rule","log-level: info",
+        "proxies:",
+        `  - name: "infrlo-vless"`,`    type: vless`,`    server: ${host}`,`    port: 443`,
+        `    uuid: ${UUID}`,`    network: ws`,`    tls: true`,`    udp: true`,
+        `    servername: ${host}`,`    skip-cert-verify: true`,
+        `    ws-opts:`,`      path: ${WS_PATH}`,`      headers:`,`        Host: ${host}`,
+        `    client-fingerprint: chrome`,
+        "proxy-groups:",
+        '  - name: "🚀 代理"',"    type: select","    proxies:",
+        '      - "infrlo-vless"',"      - DIRECT",
+        "rules:",
+        "  - GEOIP,CN,DIRECT","  - MATCH,🚀 代理",
+      ].join("\n"));
+    }
     const params = new URLSearchParams({
       security: "tls", type: "ws", path: WS_PATH,
       sni: host, host: host, fp: "chrome", alpn: "h2,http/1.1",
