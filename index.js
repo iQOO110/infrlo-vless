@@ -8,7 +8,15 @@ const SUB_TOKEN = process.env.SUB_TOKEN || "";
 const startTime = Date.now();
 
 const rawUUIDs = (process.env.UUID || "").split(",").map(s => s.trim()).filter(Boolean);
-if (rawUUIDs.length === 0) rawUUIDs.push(crypto.randomUUID());
+const NODE_COUNT = Math.min(5, Math.max(1, parseInt(process.env.NODE_COUNT) || 5));
+
+if (rawUUIDs.length === 0) {
+  const seed = "infrlo-vless";
+  for (let i = 0; i < NODE_COUNT; i++) {
+    const h = crypto.createHash("md5").update(`${seed}-${i}`).digest("hex");
+    rawUUIDs.push(`${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20,32)}`);
+  }
+}
 const UUID_LIST = rawUUIDs.slice(0, 5);
 
 const nodes = UUID_LIST.map((uuid, i) => ({
