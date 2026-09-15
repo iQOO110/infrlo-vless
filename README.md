@@ -1,68 +1,35 @@
 # infrlo-vless
 
-VLESS over WebSocket，专为 infrlo.com 等 PaaS 平台设计。支持多节点、Clash 订阅。
+VLESS over WebSocket，部署到 [Infrlo](https://infrlo.com) 免费套餐。
 
-## 环境变量
-
-| 变量名 | 必须 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `UUID` | 否 | 随机生成 | VLESS 用户 UUID，逗号分隔最多 5 个（如 `uuid1,uuid2,uuid3`） |
-| `SUB_TOKEN` | 否 | 无 | 订阅接口访问令牌，不设则公开访问 |
-| `PORT` | 否 | `5000` | HTTP 监听端口（Infrlo 无需手动设置） |
-
-## 多节点
-
-设置逗号分隔的 UUID 即可生成多个节点：
-
-```
-UUID = aaa-bbb,ccc-ddd,eee-fff
-```
-
-路径自动分配为 `/vless1`、`/vless2`、`/vless3`。单个 UUID 则使用 `/vless`。
-
-## 订阅接口
-
-| 端点 | 说明 |
-|------|------|
-| `https://域名/sub` | Base64 编码的 VLESS 链接列表（V2Ray 格式） |
-| `https://域名/sub?format=clash` | Clash Meta YAML 配置 |
-| `https://域名/sub?token=你的TOKEN` | 带令牌访问（需设 SUB_TOKEN） |
-| `https://域名/health` | 健康检查 |
-
-## 本地测试
-
-```bash
-cd infrlo-vless
-npm install
-UUID=test1,test2 npm start
-```
-
-## 部署到 infrlo.com
+## 部署
 
 1. Fork 本仓库
-2. 登录 https://dash.infrlo.com/ → Create App → 连接仓库
-3. Runtime: `npm install` → `node index.js`
-4. 设置环境变量（推荐）：
-   ```
-   UUID = uuid1,uuid2,uuid3,uuid4,uuid5
-   ```
-5. 部署完成，访问 `https://你的域名/sub`
+2. [Infrlo Dashboard](https://dash.infrlo.com/) → Create App → 填入仓库 URL
+3. Runtime 配置：
+   - Build: `npm install`
+   - Run: `node index.js`
+4. 部署
 
-## 客户端配置示例（单节点）
+## 环境变量（可选）
 
-| 参数 | 值 |
-|------|-----|
-| 地址 | 你的 infrlo.com 域名 |
-| 端口 | 443 |
-| 用户 ID | 你设置的 UUID |
-| 传输协议 | ws |
-| 路径 | `/vless` |
-| 传输安全 | tls |
-| SNI | 你的 infrlo.com 域名 |
+| 变量 | 说明 |
+|------|------|
+| `UUID` | VLESS 节点 UUID，逗号分隔最多 5 个。不设则随机生成 1 个 |
+| `SUB_TOKEN` | 订阅接口访问密码，不设则公开 |
 
-## 注意事项
+示例：
+```
+UUID = b3a1c9d2-e4f5-4a6b-8c7d-9e0f1a2b3c4d,e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8a9b
+SUB_TOKEN = mypassword
+```
 
-- Infrlo 免费套餐：512MB RAM / 2GB 存储，代理够用
-- WebSocket 连接可能被负载均衡器超时断开
-- 仅支持 TCP（VLESS+WS），不支持 UDP
-- 仅供学习研究使用
+## 使用
+
+| 地址 | 用途 |
+|------|------|
+| `https://域名/panel` | 管理面板（二维码、一键导入 Clash） |
+| `https://域名/sub?format=clash` | Clash Meta 订阅 |
+| `https://域名/sub` | V2Ray 订阅（Base64） |
+
+单个 UUID 路径为 `/vless`，多个为 `/vless1` ~ `/vless5`。
