@@ -163,12 +163,17 @@ const QRCode = require("qrcode");
 // ── Apple-style Admin Panel ─────────────────────────
 function servePanel(res, host) {
   const qrData = nodes.map(n => buildVlessLink(n.uuid, host, n.path, n.name));
-  const subBase64 = Buffer.from(nodes.map(n => buildVlessLink(n.uuid, host, n.path, n.name)).join("\n")).toString("base64");
+  const clashSubUrl = `https://${host}/sub?format=clash`;
+  const vlessSubUrl = `https://${host}/sub`;
   
-  // Generate QR codes as SVG data URIs (server-side, lightweight)
-  const qrPromises = qrData.map(link => QRCode.toString(link, { type: "svg", margin: 1, width: 200, color: { dark: "#1d1d1f", light: "#ffffff" } }));
+  // QR codes: one for Clash sub URL, one per VLESS node
+  const qrPromises = [QRCode.toString(clashSubUrl, { type: "svg", margin: 1, width: 200, color: { dark: "#1d1d1f", light: "#ffffff" } })];
+  qrData.forEach(link => qrPromises.push(QRCode.toString(link, { type: "svg", margin: 1, width: 200, color: { dark: "#1d1d1f", light: "#ffffff" } })));
   
   Promise.all(qrPromises).then(qrSvgs => {
+    const clashQR = qrSvgs[0];
+    const nodeQRs = qrSvgs.slice(1);
+
     const nodeCards = nodes.map((n, i) => `
       <div class="card">
         <div class="card-header">
@@ -176,7 +181,7 @@ function servePanel(res, host) {
           <span class="path-mono">${n.path}</span>
         </div>
         <div class="card-body">
-          <div class="qr-wrap">${qrSvgs[i]}</div>
+          <div class="qr-wrap">${nodeQRs[i]}</div>
           <div class="node-info">
             <div class="info-row">
               <span class="label">UUID</span>
@@ -190,6 +195,8 @@ function servePanel(res, host) {
           </div>
         </div>
       </div>`).join("");
+
+    const tokenParam = SUB_TOKEN ? `&token=${SUB_TOKEN}` : "";
 
     const html = `<!DOCTYPE html>
 <html lang="zh">
@@ -208,6 +215,7 @@ function servePanel(res, host) {
   --hairline: rgba(0,0,0,0.08);
   --radius: 16px;
   --shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
+  --green: #34c759;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -219,6 +227,7 @@ function servePanel(res, host) {
     --accent-hover: #40a9ff;
     --hairline: rgba(255,255,255,0.1);
     --shadow: 0 1px 3px rgba(0,0,0,0.3);
+    --green: #30d158;
   }
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -236,9 +245,8 @@ body {
 .header h1 { font-size: 34px; font-weight: 600; letter-spacing: -0.28px; margin-bottom: 8px; }
 .header .domain { font-size: 15px; color: var(--text-muted); font-weight: 400; }
 .status { display: inline-flex; align-items: center; gap: 6px; background: var(--card-bg); border: 1px solid var(--hairline); border-radius: 20px; padding: 6px 14px; font-size: 13px; font-weight: 500; margin-top: 12px; }
-.status-dot { width: 7px; height: 7px; border-radius: 50%; background: #34c759; animation: pulse 2s infinite; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-.actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; padding: 0 0 32px; }
 .btn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 10px 20px; border-radius: 12px; border: none;
@@ -249,6 +257,8 @@ body {
 .btn:hover { background: var(--accent-hover); transform: scale(1.02); }
 .btn-ghost { background: var(--card-bg); color: var(--accent); border: 1px solid var(--hairline); }
 .btn-ghost:hover { background: var(--card-bg); color: var(--accent-hover); border-color: var(--accent); }
+.btn-green { background: var(--green); }
+.btn-green:hover { background: #28b84e; }
 .card {
   background: var(--card-bg); border-radius: var(--radius);
   box-shadow: var(--shadow); margin-bottom: 16px;
@@ -264,6 +274,13 @@ body {
 .info-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; min-width: 44px; }
 .uuid { font-family: "SF Mono", "Menlo", monospace; font-size: 13px; color: var(--text); background: var(--bg); padding: 4px 8px; border-radius: 6px; }
+.sub-url {
+  font-family: "SF Mono", "Menlo", monospace; font-size: 13px;
+  color: var(--accent); background: var(--bg); padding: 8px 12px;
+  border-radius: 8px; word-break: break-all; display: block;
+  border: 1px solid var(--hairline);
+}
+.btn-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .btn-copy {
   font-family: inherit; font-size: 12px; font-weight: 500;
   padding: 4px 12px; border-radius: 8px; border: 1px solid var(--hairline);
@@ -273,6 +290,7 @@ body {
 .btn-copy:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
 .toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #1d1d1f; color: #fff; padding: 10px 24px; border-radius: 12px; font-size: 14px; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 99; }
 .toast.show { opacity: 1; }
+.section-title { font-size: 20px; font-weight: 600; margin: 32px 0 16px; letter-spacing: -0.2px; }
 .footer { text-align: center; padding: 24px; font-size: 12px; color: var(--text-muted); }
 .stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 24px; }
 .stat-item { background: var(--card-bg); border: 1px solid var(--hairline); border-radius: var(--radius); padding: 16px; text-align: center; }
@@ -288,16 +306,47 @@ body {
     <div class="domain">${host}</div>
     <div class="status"><span class="status-dot"></span>在线 · ${nodes.length} 个节点</div>
   </div>
-  <div class="actions">
-    <a class="btn" href="/sub">📋 订阅链接</a>
-    <a class="btn btn-ghost" href="/sub?format=clash">⚡ Clash 订阅</a>
-    <a class="btn btn-ghost" href="/status" target="_blank">📊 状态</a>
-  </div>
   <div class="stats" id="stats">
     <div class="stat-item"><span class="stat-val" id="stat-uptime">--</span><span class="stat-label">运行时间</span></div>
     <div class="stat-item"><span class="stat-val" id="stat-mem">--</span><span class="stat-label">内存占用</span></div>
     <div class="stat-item"><span class="stat-val" id="stat-load">--</span><span class="stat-label">系统负载</span></div>
   </div>
+
+  <!-- Clash 订阅卡片 -->
+  <div class="card" style="border-color: var(--accent);">
+    <div class="card-header">
+      <span class="badge" style="color: var(--green); background: rgba(52,199,89,0.1);">⚡ Clash 订阅</span>
+      <span class="path-mono">一键导入</span>
+    </div>
+    <div class="card-body">
+      <div class="qr-wrap">${clashQR}</div>
+      <div class="node-info">
+        <code class="sub-url">${clashSubUrl}${tokenParam}</code>
+        <div class="btn-row">
+          <button class="btn btn-copy" onclick="cp('${clashSubUrl}${tokenParam}')">📋 复制 URL</button>
+          <button class="btn btn-green" onclick="location.href='clash://install-config?url='+encodeURIComponent('${clashSubUrl}${tokenParam}')">🚀 一键导入 Clash</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- V2Ray 订阅卡片 -->
+  <div class="card">
+    <div class="card-header">
+      <span class="badge">📋 V2Ray 订阅</span>
+      <span class="path-mono">Base64</span>
+    </div>
+    <div class="card-body">
+      <div class="node-info" style="flex:1">
+        <code class="sub-url">${vlessSubUrl}${tokenParam}</code>
+        <div class="btn-row">
+          <button class="btn btn-copy" onclick="cp('${vlessSubUrl}${tokenParam}')">📋 复制 URL</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">节点详情</div>
   ${nodeCards}
   <div class="footer">VLESS over WebSocket · Powered by Infrlo</div>
 </div>
