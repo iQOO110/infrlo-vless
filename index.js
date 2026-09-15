@@ -15,8 +15,31 @@ const uuidBytes = uuidToBytes(UUID);
 
 const server = http.createServer((req, res) => {
   if (req.url === "/" || req.url === "/health") {
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("OK");
+    if (req.url === "/health") {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      return res.end("OK");
+    }
+    const host = req.headers.host || "localhost";
+    const clashUrl = `https://${host}/sub?format=clash`;
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(`<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Clash 订阅</title><style>
+:root{--bg:#f5f5f7;--c:#fff;--t:#1d1d1f;--m:#86868b;--a:#06c;--h:rgba(0,0,0,.08)}
+@media(prefers-color-scheme:dark){:root{--bg:#000;--c:#1c1c1e;--t:#f5f5f7;--m:#98989d;--a:#2997ff;--h:rgba(255,255,255,.1)}}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--t);-webkit-font-smoothing:antialiased;display:flex;align-items:center;justify-content:center;min-height:100vh}
+.card{background:var(--c);border-radius:20px;padding:40px 32px;max-width:440px;width:90%;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.04);border:1px solid var(--h)}
+h1{font-size:28px;font-weight:600;letter-spacing:-.3px;margin-bottom:4px}
+.dom{font-size:14px;color:var(--m);margin-bottom:28px}
+.url{font-family:monospace;font-size:13px;color:var(--a);background:var(--bg);padding:12px 16px;border-radius:10px;word-break:break-all;display:block;border:1px solid var(--h);margin-bottom:16px;text-align:left}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:12px 28px;border-radius:12px;border:none;font:inherit;font-size:15px;font-weight:500;cursor:pointer;background:var(--a);color:#fff}
+.btn:hover{filter:brightness(1.1);transform:scale(1.02)}
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#1d1d1f;color:#fff;padding:10px 24px;border-radius:12px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:99}
+.toast.show{opacity:1}
+</style></head><body><div class="card">
+<h1>⚡ Clash 订阅</h1><div class="dom">${host}</div>
+<code class="url">${clashUrl}</code>
+<button class="btn" onclick="navigator.clipboard.writeText('${clashUrl}').then(()=>{const e=document.getElementById('toast');e.textContent='已复制，去 Clash 粘贴';e.classList.add('show');setTimeout(()=>e.classList.remove('show'),2000)})">📋 复制订阅 URL</button>
+</div><div class="toast" id="toast"></div></body></html>`);
     return;
   }
 
