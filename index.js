@@ -1,7 +1,10 @@
 const http = require("http");
 const net = require("net");
+const os = require("os");
 const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
+
+const startTime = Date.now();
 
 // ── Config ──────────────────────────────────────────
 const PORT = process.env.PORT || process.env.HTTP_PORT || process.env.APP_PORT || 5000;
@@ -131,6 +134,20 @@ const server = http.createServer((req, res) => {
     return res.end(Buffer.from(raw).toString("base64"));
   }
 
+  // Server status
+  if (path === "/status") {
+    const mem = process.memoryUsage();
+    res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({
+      uptime: Math.floor((Date.now() - startTime) / 1000),
+      uptimeApp: Math.floor(process.uptime()),
+      memory: { rss: Math.round(mem.rss / 1024 / 1024), heapUsed: Math.round(mem.heapUsed / 1024 / 1024), heapTotal: Math.round(mem.heapTotal / 1024 / 1024) },
+      system: { totalmem: Math.round(os.totalmem() / 1024 / 1024), freemem: Math.round(os.freemem() / 1024 / 1024), loadavg: os.loadavg().map(v => v.toFixed(2)), platform: os.platform(), arch: os.arch() },
+      nodes: nodes.length,
+      host: host,
+    }));
+  }
+
   // Admin panel
   if (path === "/panel") {
     return servePanel(res, host);
@@ -257,7 +274,11 @@ body {
 .toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #1d1d1f; color: #fff; padding: 10px 24px; border-radius: 12px; font-size: 14px; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 99; }
 .toast.show { opacity: 1; }
 .footer { text-align: center; padding: 24px; font-size: 12px; color: var(--text-muted); }
-@media (max-width: 480px) { .card-body { flex-direction: column; align-items: flex-start; } .container { padding: 16px 12px 60px; } .header h1 { font-size: 28px; } }
+.stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 24px; }
+.stat-item { background: var(--card-bg); border: 1px solid var(--hairline); border-radius: var(--radius); padding: 16px; text-align: center; }
+.stat-val { display: block; font-size: 22px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+@media (max-width: 480px) { .card-body { flex-direction: column; align-items: flex-start; } .container { padding: 16px 12px 60px; } .header h1 { font-size: 28px; } .stats { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -270,6 +291,12 @@ body {
   <div class="actions">
     <a class="btn" href="/sub">📋 订阅链接</a>
     <a class="btn btn-ghost" href="/sub?format=clash">⚡ Clash 订阅</a>
+    <a class="btn btn-ghost" href="/status" target="_blank">📊 状态</a>
+  </div>
+  <div class="stats" id="stats">
+    <div class="stat-item"><span class="stat-val" id="stat-uptime">--</span><span class="stat-label">运行时间</span></div>
+    <div class="stat-item"><span class="stat-val" id="stat-mem">--</span><span class="stat-label">内存占用</span></div>
+    <div class="stat-item"><span class="stat-val" id="stat-load">--</span><span class="stat-label">系统负载</span></div>
   </div>
   ${nodeCards}
   <div class="footer">VLESS over WebSocket · Powered by Infrlo</div>
@@ -284,6 +311,12 @@ function cp(t) {
     setTimeout(() => el.classList.remove("show"), 1500);
   });
 }
+fetch("/status").then(r => r.json()).then(s => {
+  const m = Math.floor(s.uptime / 60);
+  document.getElementById("stat-uptime").textContent = m < 60 ? m + "m" : Math.floor(m/60) + "h" + (m%60) + "m";
+  document.getElementById("stat-mem").textContent = s.memory.rss + " MB";
+  document.getElementById("stat-load").textContent = s.system.loadavg[0];
+}).catch(() => {});
 </script>
 </body>
 </html>`;
@@ -302,54 +335,91 @@ function buildVlessLink(uuid, host, wpath, name) {
   return `vless://${uuid}@${host}:443?${params}#${encodeURIComponent(name)}`;
 }
 
-// ── Clash subscription ──────────────────────────────
+// ── Clash Meta subscription (sub.txt style) ─────────
 function serveClashSub(res, host) {
-  const proxyLines = nodes.map(n => {
-    return [
-      `  - name: "${n.name}"`,
-      `    type: vless`,
-      `    server: ${host}`,
-      `    port: 443`,
-      `    uuid: ${n.uuid}`,
-      `    network: ws`,
-      `    tls: true`,
-      `    udp: false`,
-      `    servername: ${host}`,
-      `    skip-cert-verify: true`,
-      `    ws-opts:`,
-      `      path: ${n.path}`,
-      `      headers:`,
-      `        Host: ${host}`,
-      `    client-fingerprint: chrome`,
-    ].join("\n");
-  }).join("\n");
+  const proxyLines = nodes.map(n => [
+    `  - name: "${n.name}"`,
+    `    type: vless`,
+    `    server: ${host}`,
+    `    port: 443`,
+    `    uuid: ${n.uuid}`,
+    `    network: ws`,
+    `    tls: true`,
+    `    udp: true`,
+    `    servername: ${host}`,
+    `    skip-cert-verify: true`,
+    `    ws-opts:`,
+    `      path: ${n.path}`,
+    `      headers:`,
+    `        Host: ${host}`,
+    `    client-fingerprint: chrome`,
+  ].join("\n")).join("\n");
 
-  const proxyNames = nodes.map(n => `      - "${n.name}"`).join("\n");
+  const proxyNamesAll = nodes.map(n => `      - ${n.name}`).join("\n");
+  const proxyNamesSelect = nodes.map(n => `      - "${n.name}"`).join("\n");
 
   const yaml = [
     "mixed-port: 7890",
     "allow-lan: false",
     "mode: rule",
     "log-level: info",
-    "",
+    "ipv6: false",
+    "unified-delay: true",
+    "tcp-concurrent: true",
+    "geodata-mode: true",
+    "geo-auto-update: true",
+    "geox-url:",
+    "  geoip: https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat",
+    "  geosite: https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat",
+    "dns:",
+    "  enable: true",
+    "  ipv6: false",
+    "  enhanced-mode: fake-ip",
+    "  fake-ip-range: 198.18.0.1/16",
+    "  default-nameserver:",
+    "    - 223.5.5.5",
+    "    - 119.29.29.29",
+    "  nameserver:",
+    "    - https://dns.alidns.com/dns-query",
+    "    - https://doh.pub/dns-query",
+    "  fallback:",
+    "    - https://1.1.1.1/dns-query",
+    "    - https://8.8.8.8/dns-query",
+    "  fallback-filter:",
+    "    geoip: true",
+    "    geoip-code: CN",
     "proxies:",
     proxyLines,
-    "",
     "proxy-groups:",
     '  - name: "🚀 节点选择"',
     "    type: select",
     "    proxies:",
-    proxyNames,
+    proxyNamesSelect,
     "      - DIRECT",
-    "",
+    '  - name: "⚡ 自动选择"',
+    "    type: url-test",
+    "    url: https://www.gstatic.com/generate_204",
+    "    interval: 180",
+    "    tolerance: 50",
+    "    lazy: true",
+    "    proxies:",
+    proxyNamesAll,
+    '  - name: "🏠 国内直连"',
+    "    type: select",
+    "    proxies:",
+    "      - DIRECT",
     "rules:",
-    "  - GEOIP,CN,DIRECT",
+    "  - GEOSITE,private,DIRECT",
+    "  - GEOIP,private,DIRECT,no-resolve",
+    "  - GEOSITE,cn,🏠 国内直连",
+    "  - GEOIP,CN,🏠 国内直连,no-resolve",
     "  - MATCH,🚀 节点选择",
   ].join("\n");
 
   res.writeHead(200, {
     "Content-Type": "text/yaml; charset=utf-8",
     "Content-Disposition": "attachment; filename=infrlo-clash.yaml",
+    "Subscription-Userinfo": `upload=0; download=0; total=0; expire=0`,
   });
   res.end(yaml);
 }
