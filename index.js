@@ -3,8 +3,8 @@ const net = require("net");
 const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
-// Infrlo sometimes injects PORT, sometimes doesn't. Try multiple sources.
-const PORT = process.env.PORT || process.env.HTTP_PORT || process.env.APP_PORT || 3000;
+// Infrlo URL deployment doesn't inject PORT. Default to 5000 (standard Infrlo HTTP port).
+const PORT = process.env.PORT || process.env.HTTP_PORT || process.env.APP_PORT || 5000;
 const UUID = (process.env.UUID || crypto.randomUUID()).toLowerCase();
 const WS_PATH = process.env.WS_PATH || "/vless";
 
