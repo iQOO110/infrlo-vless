@@ -415,11 +415,6 @@ function serveClashSub(res, host) {
     "ipv6: false",
     "unified-delay: true",
     "tcp-concurrent: true",
-    "geodata-mode: true",
-    "geo-auto-update: true",
-    "geox-url:",
-    "  geoip: https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat",
-    "  geosite: https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat",
     "dns:",
     "  enable: true",
     "  ipv6: false",
@@ -458,10 +453,7 @@ function serveClashSub(res, host) {
     "    proxies:",
     "      - DIRECT",
     "rules:",
-    "  - GEOSITE,private,DIRECT",
-    "  - GEOIP,private,DIRECT,no-resolve",
-    "  - GEOSITE,cn,🏠 国内直连",
-    "  - GEOIP,CN,🏠 国内直连,no-resolve",
+    "  - GEOIP,CN,🏠 国内直连",
     "  - MATCH,🚀 节点选择",
   ].join("\n");
 
