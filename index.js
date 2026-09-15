@@ -3,112 +3,51 @@ const net = require("net");
 const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
-// Infrlo URL deployment doesn't inject PORT. Default to 5000 (standard Infrlo HTTP port).
+// ── Config ──────────────────────────────────────────
 const PORT = process.env.PORT || process.env.HTTP_PORT || process.env.APP_PORT || 5000;
-const UUID = (process.env.UUID || crypto.randomUUID()).toLowerCase();
-const WS_PATH = process.env.WS_PATH || "/vless";
+const SUB_TOKEN = process.env.SUB_TOKEN || "";
 
-// Debug: log all env vars on startup (exclude secrets)
-const safeEnv = {};
-for (const k of Object.keys(process.env).sort()) {
-  const v = process.env[k];
-  if (k.toLowerCase().includes('key') || k.toLowerCase().includes('secret') || k.toLowerCase().includes('token') || k.toLowerCase().includes('pass')) {
-    safeEnv[k] = '***';
-  } else {
-    safeEnv[k] = v;
-  }
+// Parse UUID list (comma-separated), up to 5
+const rawUUIDs = (process.env.UUID || "").split(",").map(s => s.trim()).filter(Boolean);
+if (rawUUIDs.length === 0) {
+  rawUUIDs.push(crypto.randomUUID());
 }
-console.log('ENV:', JSON.stringify(safeEnv, null, 2));
+const UUID_LIST = rawUUIDs.slice(0, 5); // max 5
 
+// Build node configs: each UUID maps to a path
+const nodes = UUID_LIST.map((uuid, i) => ({
+  uuid: uuid.toLowerCase(),
+  path: UUID_LIST.length === 1 ? "/vless" : `/vless${i + 1}`,
+  name: UUID_LIST.length === 1 ? "infrlo-vless" : `infrlo-vless-${i + 1}`,
+}));
+
+// ── UUID → bytes map ────────────────────────────────
 function uuidToBytes(uuid) {
   return Buffer.from(uuid.replace(/-/g, ""), "hex");
 }
+const uuidMap = new Map();
+nodes.forEach(n => uuidMap.set(n.path, uuidToBytes(n.uuid)));
 
-function formatUUID(buf) {
-  const hex = buf.toString("hex");
-  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
-}
-
-const uuidBytes = uuidToBytes(UUID);
-
-const server = http.createServer((req, res) => {
-  if (req.url === "/" || req.url === "/health") {
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("OK");
-    return;
-  }
-
-  if (req.url === "/sub") {
-    const host = req.headers.host || `localhost:${PORT}`;
-    const params = new URLSearchParams({
-      security: "tls",
-      type: "ws",
-      path: WS_PATH,
-      sni: host,
-      host: host,
-      fp: "chrome",
-      alpn: "h2,http/1.1",
-    });
-    const link = `vless://${UUID}@${host}:443?${params}#infrlo-vless`;
-    const base64 = Buffer.from(link).toString("base64");
-    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end(base64);
-    return;
-  }
-
-  if (req.url === "/env") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ PORT, UUID: '***', WS_PATH, env: safeEnv }));
-    return;
-  }
-
-  res.writeHead(404, { "Content-Type": "text/plain" });
-  res.end("Not Found");
-});
-
-const wss = new WebSocketServer({ server, path: WS_PATH });
-
-wss.on("connection", (ws, req) => {
+// ── VLESS handshake + forwarding ────────────────────
+function handleVLESS(ws, expectedUUID) {
   ws.once("message", (data, isBinary) => {
-    if (!isBinary) {
-      ws.close(1008, "Binary required");
-      return;
-    }
+    if (!isBinary) { ws.close(1008, "Binary required"); return; }
 
     const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
     let offset = 0;
 
-    // Version (1 byte)
-    const version = buf[offset++];
-    if (version !== 0x00) {
-      ws.close(1008, "Unsupported version");
-      return;
+    if (buf[offset++] !== 0x00) { ws.close(1008, "Unsupported version"); return; }
+
+    const clientUUID = buf.slice(offset, offset + 16); offset += 16;
+    if (Buffer.compare(clientUUID, expectedUUID) !== 0) {
+      ws.close(1008, "Invalid UUID"); return;
     }
 
-    // UUID (16 bytes)
-    const clientUUID = buf.slice(offset, offset + 16);
-    offset += 16;
-    if (Buffer.compare(clientUUID, uuidBytes) !== 0) {
-      ws.close(1008, "Invalid UUID");
-      return;
-    }
+    const addonsLen = buf[offset++]; offset += addonsLen;
 
-    // Addons length (1 byte) + addons
-    const addonsLen = buf[offset++];
-    offset += addonsLen;
+    if (buf[offset++] !== 0x01) { ws.close(1008, "Only TCP supported"); return; }
 
-    // Command (1 byte): 1=TCP, 2=UDP, 3=MUX
-    const cmd = buf[offset++];
-    if (cmd !== 0x01) {
-      ws.close(1008, "Only TCP supported");
-      return;
-    }
-
-    // Port (2 bytes, big endian)
-    const port = buf.readUInt16BE(offset);
-    offset += 2;
-
-    // Address type (1 byte): 1=IPv4, 2=Domain, 3=IPv6
+    const port = buf.readUInt16BE(offset); offset += 2;
     const addrType = buf[offset++];
     let address;
     if (addrType === 0x01) {
@@ -122,58 +61,153 @@ wss.on("connection", (ws, req) => {
       address = buf.slice(offset, offset + 16).toString("hex").match(/.{1,4}/g).join(":");
       offset += 16;
     } else {
-      ws.close(1008, "Unknown address type");
-      return;
+      ws.close(1008, "Unknown address type"); return;
     }
 
-    // Remaining bytes are the initial payload
     const payload = buf.slice(offset);
 
-    // Connect to target
     const tcp = net.connect({ port, host: address }, () => {
-      // Send VLESS response header: version(1) + addons_length(1=0)
       ws.send(Buffer.from([0x00, 0x00]));
-
-      if (payload.length > 0) {
-        tcp.write(payload);
-      }
-
-      // TCP -> WS
-      tcp.on("data", (chunk) => {
-        if (ws.readyState === ws.OPEN) {
-          ws.send(chunk);
-        }
-      });
+      if (payload.length > 0) tcp.write(payload);
+      tcp.on("data", (chunk) => { if (ws.readyState === ws.OPEN) ws.send(chunk); });
     });
 
-    tcp.on("error", () => {
-      try { ws.close(); } catch {}
-    });
-    tcp.on("close", () => {
-      try { ws.close(); } catch {}
-    });
+    tcp.on("error", () => { try { ws.close(); } catch {} });
+    tcp.on("close", () => { try { ws.close(); } catch {} });
 
-    // WS -> TCP (subsequent messages)
     ws.on("message", (chunk) => {
       const d = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      if (tcp.writable) {
-        tcp.write(d);
-      }
+      if (tcp.writable) tcp.write(d);
     });
-
-    ws.on("close", () => {
-      tcp.destroy();
-    });
-
-    ws.on("error", () => {
-      tcp.destroy();
-    });
+    ws.on("close", () => tcp.destroy());
+    ws.on("error", () => tcp.destroy());
   });
+}
+
+// ── HTTP Server ─────────────────────────────────────
+const server = http.createServer((req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const path = url.pathname;
+  const host = req.headers.host || "localhost";
+
+  // Health check
+  if (path === "/" || path === "/health") {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    return res.end("OK");
+  }
+
+  // Env debug
+  if (path === "/env") {
+    const safe = {};
+    for (const k of Object.keys(process.env).sort()) {
+      const v = process.env[k];
+      safe[k] = /key|secret|token|pass/i.test(k) ? "***" : v;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ PORT, nodes: nodes.length, paths: nodes.map(n => n.path), env: safe }));
+  }
+
+  // Subscription endpoint
+  if (path === "/sub") {
+    // Token check
+    if (SUB_TOKEN && url.searchParams.get("token") !== SUB_TOKEN) {
+      res.writeHead(403, { "Content-Type": "text/plain" });
+      return res.end("Forbidden");
+    }
+
+    const format = url.searchParams.get("format") || "base64";
+
+    if (format === "clash") {
+      return serveClashSub(res, host);
+    }
+
+    // Default: base64 VLESS links (one per line)
+    const links = nodes.map(n => buildVlessLink(n.uuid, host, n.path, n.name));
+    const raw = links.join("\n");
+    res.writeHead(200, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Subscription-Userinfo": `upload=0; download=0; total=0; expire=0`,
+    });
+    return res.end(Buffer.from(raw).toString("base64"));
+  }
+
+  res.writeHead(404, { "Content-Type": "text/plain" });
+  res.end("Not Found");
 });
 
+// ── VLESS link builder ──────────────────────────────
+function buildVlessLink(uuid, host, wpath, name) {
+  const params = new URLSearchParams({
+    security: "tls", type: "ws", path: wpath,
+    sni: host, host: host, fp: "chrome", alpn: "h2,http/1.1",
+  });
+  return `vless://${uuid}@${host}:443?${params}#${encodeURIComponent(name)}`;
+}
+
+// ── Clash subscription ──────────────────────────────
+function serveClashSub(res, host) {
+  const proxyLines = nodes.map(n => {
+    return [
+      `  - name: "${n.name}"`,
+      `    type: vless`,
+      `    server: ${host}`,
+      `    port: 443`,
+      `    uuid: ${n.uuid}`,
+      `    network: ws`,
+      `    tls: true`,
+      `    udp: false`,
+      `    servername: ${host}`,
+      `    skip-cert-verify: true`,
+      `    ws-opts:`,
+      `      path: ${n.path}`,
+      `      headers:`,
+      `        Host: ${host}`,
+      `    client-fingerprint: chrome`,
+    ].join("\n");
+  }).join("\n");
+
+  const proxyNames = nodes.map(n => `      - "${n.name}"`).join("\n");
+
+  const yaml = [
+    "mixed-port: 7890",
+    "allow-lan: false",
+    "mode: rule",
+    "log-level: info",
+    "",
+    "proxies:",
+    proxyLines,
+    "",
+    "proxy-groups:",
+    '  - name: "🚀 节点选择"',
+    "    type: select",
+    "    proxies:",
+    proxyNames,
+    "      - DIRECT",
+    "",
+    "rules:",
+    "  - GEOIP,CN,DIRECT",
+    "  - MATCH,🚀 节点选择",
+  ].join("\n");
+
+  res.writeHead(200, {
+    "Content-Type": "text/yaml; charset=utf-8",
+    "Content-Disposition": "attachment; filename=infrlo-clash.yaml",
+  });
+  res.end(yaml);
+}
+
+// ── WebSocket servers (one per UUID path) ───────────
+nodes.forEach(n => {
+  const wss = new WebSocketServer({ server, path: n.path });
+  const uuidKey = uuidMap.get(n.path);
+  wss.on("connection", (ws) => handleVLESS(ws, uuidKey));
+  console.log(`  Path: ${n.path}  UUID: ${n.uuid.slice(0, 8)}...`);
+});
+
+// ── Start ───────────────────────────────────────────
 server.listen(PORT, () => {
   console.log(`VLESS+WS server running on port ${PORT}`);
-  console.log(`WebSocket path: ${WS_PATH}`);
-  console.log(`UUID: ${UUID}`);
+  console.log(`Nodes: ${nodes.length}`);
+  console.log(`Sub token: ${SUB_TOKEN ? "enabled" : "disabled"}`);
   console.log(`Subscription: http://localhost:${PORT}/sub`);
 });
