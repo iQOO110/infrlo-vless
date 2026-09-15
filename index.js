@@ -314,7 +314,7 @@ body {
       <span class="path-mono">一键导入</span>
     </div>
     <div class="card-body">
-      <div class="qr-wrap">${clashQR}</div>
+      <div class="qr-wrap">${qrImg(clashSubUrl)}</div>
       <div class="node-info">
         <code class="sub-url">${clashSubUrl}${tokenParam}</code>
         <div class="btn-row">
