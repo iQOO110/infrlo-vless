@@ -13,7 +13,7 @@ const parsedTrafficTotalGb = Number.parseFloat(process.env.TRAFFIC_TOTAL_GB);
 const TRAFFIC_TOTAL_GB = Number.isFinite(parsedTrafficTotalGb) && parsedTrafficTotalGb >= 0 ? parsedTrafficTotalGb : 60;
 const TRAFFIC_TOTAL_BYTES = Math.round(TRAFFIC_TOTAL_GB * 1024 ** 3);
 const TRAFFIC_EXPIRE = Math.max(0, parseInt(process.env.TRAFFIC_EXPIRE, 10) || 0);
-const WS_MAX_PAYLOAD = 4 * 1024 * 1024;
+const WS_MAX_PAYLOAD = 16 * 1024 * 1024;
 const WS_BUFFER_LIMIT = 512 * 1024;
 const REGION = { code: "", name: "" };
 
