@@ -34,3 +34,7 @@ SUB_TOKEN = mypassword
 
 节点名称会自动带上当前部署服务器的地区，例如 `infrlo-vless1 · 中国`。
 节点路径为 `/vless1` ~ `/vless5`，其中 `/vless` 始终兼容映射到节点 1。
+
+## 实测记录
+
+包含 IP 风控检测、订阅页面和速度测试截图，详见 [实测结果](docs/test-results.md)。
