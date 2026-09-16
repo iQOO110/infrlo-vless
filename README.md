@@ -15,8 +15,8 @@ VLESS over WebSocket，部署到 [Infrlo](https://infrlo.com) 免费套餐。
 
 | 变量 | 说明 |
 |------|------|
-| `UUID` | VLESS 节点 UUID，逗号分隔最多 5 个。不设则随机生成 1 个 |
-| `SUB_TOKEN` | 订阅接口访问密码，不设则公开 |
+| `UUID` | VLESS 节点 UUID，逗号分隔最多 5 个。不足 5 个时基于第一个 UUID 稳定派生补足 |
+| `SUB_TOKEN` | 面板与订阅接口访问密码，不设则公开 |
 
 示例：
 ```
@@ -32,4 +32,4 @@ SUB_TOKEN = mypassword
 | `https://域名/sub?format=clash` | Clash Meta 订阅 |
 | `https://域名/sub` | V2Ray 订阅（Base64） |
 
-单个 UUID 路径为 `/vless`，多个为 `/vless1` ~ `/vless5`。
+节点路径为 `/vless1` ~ `/vless5`，其中 `/vless` 始终兼容映射到节点 1。
