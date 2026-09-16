@@ -31,6 +31,10 @@ SUB_TOKEN = mypassword
 | `https://域名/` | Clash 主页面、VLESS 全部节点订阅与二维码 |
 | `https://域名/sub?format=clash` | Clash Meta 订阅 |
 | `https://域名/sub` | V2Ray 订阅（Base64） |
+| `https://域名/api/stats` | 按节点统计的实时流量 JSON 接口 |
+
+首页每 5 秒刷新一次流量统计，包含上传、下载、当前连接和累计连接。
+统计数据只保存在当前进程内存中，服务重启或部署后从零开始累计。
 
 节点名称会自动带上当前部署服务器的地区，例如 `infrlo-vless1 · 中国`。
 节点路径为 `/vless1` ~ `/vless5`，其中 `/vless` 始终兼容映射到节点 1。

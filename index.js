@@ -110,10 +110,21 @@ const NODES = UUID_LIST.map((uuid, index) => ({
   uuidBytes: uuidToBytes(uuid),
 }));
 
-const ENDPOINTS = NODES.map((node) => ({ path: node.path, uuidBytes: node.uuidBytes }));
+const ENDPOINTS = NODES.map((node, nodeIndex) => ({ path: node.path, uuidBytes: node.uuidBytes, nodeIndex }));
 if (!ENDPOINTS.some((endpoint) => endpoint.path === LEGACY_WS_PATH)) {
-  ENDPOINTS.push({ path: LEGACY_WS_PATH, uuidBytes: NODES[0].uuidBytes });
+  ENDPOINTS.push({ path: LEGACY_WS_PATH, uuidBytes: NODES[0].uuidBytes, nodeIndex: 0 });
 }
+
+const STATS = {
+  startedAt: Date.now(),
+  nodes: NODES.map((node, index) => ({
+    index,
+    uploadBytes: 0,
+    downloadBytes: 0,
+    activeConnections: 0,
+    connections: 0,
+  })),
+};
 
 function getUrl(req) {
   return new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
@@ -146,6 +157,45 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function addTraffic(nodeIndex, direction, bytes) {
+  const nodeStats = STATS.nodes[nodeIndex];
+  if (!nodeStats || !Number.isFinite(bytes) || bytes <= 0) return;
+  if (direction === "upload") nodeStats.uploadBytes += bytes;
+  if (direction === "download") nodeStats.downloadBytes += bytes;
+}
+
+function getStatsSnapshot() {
+  const nodes = STATS.nodes.map((nodeStats, index) => {
+    const node = NODES[index];
+    const totalBytes = nodeStats.uploadBytes + nodeStats.downloadBytes;
+    return {
+      name: node.name,
+      path: node.path,
+      uploadBytes: nodeStats.uploadBytes,
+      downloadBytes: nodeStats.downloadBytes,
+      totalBytes,
+      activeConnections: nodeStats.activeConnections,
+      connections: nodeStats.connections,
+    };
+  });
+
+  const totals = nodes.reduce((summary, node) => ({
+    uploadBytes: summary.uploadBytes + node.uploadBytes,
+    downloadBytes: summary.downloadBytes + node.downloadBytes,
+    totalBytes: summary.totalBytes + node.totalBytes,
+    activeConnections: summary.activeConnections + node.activeConnections,
+    connections: summary.connections + node.connections,
+  }), { uploadBytes: 0, downloadBytes: 0, totalBytes: 0, activeConnections: 0, connections: 0 });
+
+  return {
+    startedAt: STATS.startedAt,
+    uptimeSeconds: Math.max(0, Math.floor((Date.now() - STATS.startedAt) / 1000)),
+    region: { code: REGION.code, name: REGION.name },
+    totals,
+    nodes,
+  };
 }
 
 function vlessLink(host, node) {
@@ -244,10 +294,24 @@ h2{font-size:19px;font-weight:700}
 .qr{width:168px;height:168px;background:#fff;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center}
 .qr-caption{color:var(--muted);font-size:12px;text-align:center}
 .qr img{width:100%;height:100%;object-fit:contain}
+.stats-card{margin-top:18px}
+.live-badge{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border-radius:999px;background:#102a3d;color:#8bd8ff;font-size:11px;font-weight:650;white-space:nowrap}
+.live-dot{width:6px;height:6px;border-radius:50%;background:#38bdf8;box-shadow:0 0 0 3px rgba(56,189,248,.12)}
+.summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:18px}
+.summary-item{min-width:0;padding:14px;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+.summary-label{color:var(--muted);font-size:11px;margin-bottom:6px}
+.summary-value{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stats-table{border-top:1px solid var(--line)}
+.stats-row{display:grid;grid-template-columns:minmax(0,1.45fr) repeat(4,minmax(68px,1fr));gap:12px;align-items:center;padding:11px 0;border-bottom:1px solid #1a2940}
+.stats-head{color:var(--muted);font-size:11px;font-weight:650;padding-top:12px;padding-bottom:8px}
+.stats-node{min-width:0;font-size:13px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stats-number{color:#dbe5f2;font-size:12px;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.stats-foot{display:flex;justify-content:space-between;gap:12px;padding-top:12px;color:var(--muted);font-size:11px}
 footer{color:#718096;font-size:12px;line-height:1.6;text-align:center;margin-top:20px}
 .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#eff6ff;color:#0b1526;padding:9px 20px;border-radius:7px;font-size:13px;font-weight:650;opacity:0;transition:opacity .2s;pointer-events:none;z-index:99}
 .toast.show{opacity:1}
 @media(max-width:640px){.shell{padding:28px 16px 40px}header{display:block}h1{font-size:23px}.status{margin-top:16px}.card{padding:18px}.section-head{display:block}.region{margin-top:10px}.service-head{display:block}.import-btn{margin-top:12px}.vless-layout{grid-template-columns:1fr;gap:22px}.url{font-size:12px}}
+@media(max-width:640px){.stats-card{margin-top:14px}.live-badge{margin-top:10px}.summary{grid-template-columns:1fr}.summary-value{font-size:18px}.stats-head{display:none}.stats-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px 12px;padding:13px 0}.stats-node{grid-column:1/-1}.stats-number{text-align:left}.stats-number::before{content:attr(data-label);display:block;margin-bottom:2px;color:var(--muted);font-size:10px}.stats-foot{display:block}.stats-foot span{display:block}.stats-foot span+span{margin-top:4px}}
 </style></head><body><div class="shell">
 <header><div class="brand"><div class="brand-mark">C</div><div><h1>Infrlo VLESS</h1><div class="subtitle">Clash / Mihomo / 通用客户端订阅</div></div></div><div class="status"><span class="status-dot"></span>服务运行正常</div></header>
 <main class="card"><div class="section-head"><div><h2>订阅导入</h2><div class="section-copy">选择适合你客户端的方式，以下地址均包含 ${NODES.length} 个节点。</div></div><div class="region">${escapeHtml(region)}</div></div>
@@ -257,9 +321,26 @@ footer{color:#718096;font-size:12px;line-height:1.6;text-align:center;margin-top
 <article class="service"><div class="service-head"><div><div class="service-title">通用订阅</div><div class="service-copy">适用于 Shadowrocket、v2rayN、Sing-box 等客户端，扫码或复制地址即可导入全部节点。</div></div></div>
 <div class="vless-layout"><div class="qr-wrap"><div class="qr"><img src="${escapeHtml(vlessQrUrl)}" alt="通用订阅二维码"></div><div class="qr-caption">扫码导入全部节点</div></div>
 <div><label class="field-label">通用订阅地址</label><div class="url-row"><code class="url">${escapeHtml(v2rayUrl)}</code><button class="btn copy-btn" data-copy="${escapeHtml(v2rayUrl)}">复制</button></div></div></div></article>
-</main><footer>节点名称会按服务器地区自动更新，订阅内容共 ${NODES.length} 个节点。</footer>
+</main>
+<section class="card stats-card"><div class="section-head"><div><h2>流量统计</h2><div class="section-copy">按节点统计自本次服务启动以来的实时流量。</div></div><div class="live-badge"><span class="live-dot"></span>每 5 秒更新</div></div>
+<div class="summary"><div class="summary-item"><div class="summary-label">总上传</div><div class="summary-value" id="total-upload">0 B</div></div><div class="summary-item"><div class="summary-label">总下载</div><div class="summary-value" id="total-download">0 B</div></div><div class="summary-item"><div class="summary-label">当前连接</div><div class="summary-value" id="total-active">0</div></div></div>
+<div class="stats-table"><div class="stats-row stats-head"><div>节点</div><div class="stats-number">上传</div><div class="stats-number">下载</div><div class="stats-number">在线</div><div class="stats-number">累计</div></div><div id="node-stats"></div></div>
+<div class="stats-foot"><span id="stats-uptime">运行时间统计中</span><span>服务重启后统计数据会清零</span></div></section>
+<footer>节点名称会按服务器地区自动更新，订阅内容共 ${NODES.length} 个节点。</footer>
 </div><div class="toast" id="toast"></div><script>
 document.addEventListener("click",async(event)=>{const button=event.target.closest("[data-copy]");if(!button)return;try{await navigator.clipboard.writeText(button.dataset.copy);const toast=document.getElementById("toast");toast.textContent="已复制";toast.classList.add("show");setTimeout(()=>toast.classList.remove("show"),1600)}catch(error){window.prompt("复制链接",button.dataset.copy)}});
+const totalUpload=document.getElementById("total-upload");
+const totalDownload=document.getElementById("total-download");
+const totalActive=document.getElementById("total-active");
+const nodeStats=document.getElementById("node-stats");
+const statsUptime=document.getElementById("stats-uptime");
+function formatBytes(value){const bytes=Math.max(0,Number(value)||0);if(bytes<1024)return Math.round(bytes)+" B";const units=["KB","MB","GB","TB"];let size=bytes/1024;let unit=0;while(size>=1024&&unit<units.length-1){size/=1024;unit++}return (size>=100?size.toFixed(0):size.toFixed(1))+" "+units[unit]}
+function formatDuration(seconds){const total=Math.max(0,Math.floor(Number(seconds)||0));const days=Math.floor(total/86400);const hours=Math.floor((total%86400)/3600);const minutes=Math.floor((total%3600)/60);if(days)return days+" 天 "+hours+" 小时";if(hours)return hours+" 小时 "+minutes+" 分钟";if(minutes)return minutes+" 分钟";return total+" 秒"}
+function statNumber(label,value){const cell=document.createElement("div");cell.className="stats-number";cell.dataset.label=label;cell.textContent=value;return cell}
+function renderStats(stats){const totals=stats.totals||{};totalUpload.textContent=formatBytes(totals.uploadBytes);totalDownload.textContent=formatBytes(totals.downloadBytes);totalActive.textContent=String(totals.activeConnections||0);nodeStats.replaceChildren();for(const node of stats.nodes||[]){const row=document.createElement("div");row.className="stats-row";const name=document.createElement("div");name.className="stats-node";name.textContent=node.name;row.append(name,statNumber("上传",formatBytes(node.uploadBytes)),statNumber("下载",formatBytes(node.downloadBytes)),statNumber("在线",String(node.activeConnections||0)),statNumber("累计",String(node.connections||0)));nodeStats.appendChild(row)}statsUptime.textContent="已运行 "+formatDuration(stats.uptimeSeconds)}
+async function refreshStats(){try{const response=await fetch("/api/stats",{cache:"no-store"});if(!response.ok)throw new Error("HTTP "+response.status);renderStats(await response.json())}catch(error){statsUptime.textContent="统计服务暂不可用"}}
+refreshStats();
+setInterval(refreshStats,5000);
 </script></body></html>`;
 }
 
@@ -276,6 +357,14 @@ const server = http.createServer((req, res) => {
   if (url.pathname === "/health") {
     res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
     return res.end("OK");
+  }
+
+  if (url.pathname === "/api/stats") {
+    res.writeHead(200, {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+    });
+    return res.end(JSON.stringify(getStatsSnapshot()));
   }
 
   if (url.pathname === "/") {
@@ -304,7 +393,7 @@ const server = http.createServer((req, res) => {
   res.end("Not Found");
 });
 
-function handleVLESS(ws, expectedUuidBytes) {
+function handleVLESS(ws, expectedUuidBytes, nodeIndex) {
   ws.once("message", (data, isBinary) => {
     if (!isBinary) {
       ws.close(1008, "Binary required");
@@ -351,30 +440,60 @@ function handleVLESS(ws, expectedUuidBytes) {
     }
 
     const payload = buf.subarray(offset);
+    const nodeStats = STATS.nodes[nodeIndex];
+    if (!nodeStats) {
+      ws.close(1011, "Stats unavailable");
+      return;
+    }
+    nodeStats.connections += 1;
+    nodeStats.activeConnections += 1;
+    addTraffic(nodeIndex, "upload", payload.length);
+
+    let released = false;
+    const releaseConnection = () => {
+      if (released) return;
+      released = true;
+      nodeStats.activeConnections = Math.max(0, nodeStats.activeConnections - 1);
+    };
+
     const tcp = net.connect({ port, host: address }, () => {
       ws.send(Buffer.from([0x00, 0x00]));
       if (payload.length > 0) tcp.write(payload);
       tcp.on("data", (chunk) => {
-        if (ws.readyState === ws.OPEN) ws.send(chunk);
+        if (ws.readyState === ws.OPEN) {
+          ws.send(chunk);
+          addTraffic(nodeIndex, "download", chunk.length);
+        }
       });
     });
 
     tcp.on("error", () => {
+      releaseConnection();
       try {
         ws.close();
       } catch {}
     });
     tcp.on("close", () => {
+      releaseConnection();
       try {
         ws.close();
       } catch {}
     });
     ws.on("message", (chunk) => {
       const dataBuffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      if (tcp.writable) tcp.write(dataBuffer);
+      if (tcp.writable) {
+        tcp.write(dataBuffer);
+        addTraffic(nodeIndex, "upload", dataBuffer.length);
+      }
     });
-    ws.on("close", () => tcp.destroy());
-    ws.on("error", () => tcp.destroy());
+    ws.on("close", () => {
+      releaseConnection();
+      tcp.destroy();
+    });
+    ws.on("error", () => {
+      releaseConnection();
+      tcp.destroy();
+    });
   });
 }
 
@@ -397,7 +516,7 @@ server.on("upgrade", (req, socket, head) => {
   }
 
   wss.handleUpgrade(req, socket, head, (ws) => {
-    handleVLESS(ws, endpoint.uuidBytes);
+    handleVLESS(ws, endpoint.uuidBytes, endpoint.nodeIndex);
   });
 });
 
