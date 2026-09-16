@@ -195,6 +195,7 @@ function clashSub(host) {
     ...NODES.map((node) => `      - ${yaml(node.name)}`),
     "      - DIRECT",
     "rules:",
+    "  - DOMAIN-SUFFIX,safebrowsing.googleapis.com,代理",
     "  - GEOIP,CN,DIRECT",
     "  - MATCH,代理",
   ].join("\n");
