@@ -1,4 +1,5 @@
 const http = require("http");
+const https = require("https");
 const net = require("net");
 const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
@@ -8,6 +9,7 @@ const MAX_NODES = 5;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const LEGACY_WS_PATH = process.env.WS_PATH || "/vless";
 const SUB_TOKEN = process.env.SUB_TOKEN || "";
+const REGION = { code: "", name: "" };
 
 function uuidToBytes(uuid) {
   return Buffer.from(uuid.replace(/-/g, ""), "hex");
@@ -39,9 +41,70 @@ function buildUuidList(raw) {
   return uuids;
 }
 
+function httpsJson(url, timeoutMs = 4000) {
+  return new Promise((resolve, reject) => {
+    const request = https.get(url, { headers: { "User-Agent": "infrlo-vless" } }, (response) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => {
+        body += chunk;
+        if (body.length > 65536) request.destroy(new Error("Response too large"));
+      });
+      response.on("end", () => {
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          reject(new Error(`HTTP ${response.statusCode}`));
+          return;
+        }
+        try {
+          resolve(JSON.parse(body));
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    request.setTimeout(timeoutMs, () => request.destroy(new Error("Timed out")));
+    request.on("error", reject);
+  });
+}
+
+function regionDisplayName(code, fallback) {
+  if (!code) return fallback || "";
+  try {
+    const displayNames = new Intl.DisplayNames(["zh-CN"], { type: "region" });
+    return displayNames.of(code) || fallback || code;
+  } catch {
+    return fallback || code;
+  }
+}
+
+async function detectRegion() {
+  const providers = [
+    { url: "https://ipwho.is/", pick: (data) => [data.country_code, data.country] },
+    { url: "https://api.country.is/", pick: (data) => [data.country, data.country] },
+  ];
+
+  for (const provider of providers) {
+    try {
+      const data = await httpsJson(provider.url);
+      if (data.success === false) continue;
+      const [code, fallback] = provider.pick(data);
+      if (code) return { code: String(code).toUpperCase(), name: regionDisplayName(code, fallback) };
+    } catch {}
+  }
+  return null;
+}
+
+function applyRegion(region) {
+  if (!region) return;
+  REGION.code = region.code;
+  REGION.name = region.name;
+  for (const node of NODES) node.name = `${node.baseName} · ${region.name}`;
+}
+
 const UUID_LIST = buildUuidList(process.env.UUID);
 const NODES = UUID_LIST.map((uuid, index) => ({
   name: `infrlo-vless${index + 1}`,
+  baseName: `infrlo-vless${index + 1}`,
   uuid,
   path: `/vless${index + 1}`,
   uuidBytes: uuidToBytes(uuid),
@@ -95,7 +158,7 @@ function vlessLink(host, node) {
     fp: "chrome",
     alpn: "h2,http/1.1",
   });
-  return `vless://${node.uuid}@${host}:443?${params}#${node.name}`;
+  return `vless://${node.uuid}@${host}:443?${params}#${encodeURIComponent(node.name)}`;
 }
 
 function clashSub(host) {
@@ -140,26 +203,65 @@ function clashSub(host) {
 function homePage(req) {
   const baseUrl = getBaseUrl(req);
   const clashUrl = buildUrl(baseUrl, "/sub", "clash");
-  const panelUrl = buildUrl(baseUrl, "/panel");
+  const importUrl = `clash://install-config?url=${encodeURIComponent(clashUrl)}`;
+  const host = baseUrl.replace(/^https?:\/\//, "");
+  const cards = NODES.map((node) => {
+    const link = vlessLink(req.headers.host || `localhost:${PORT}`, node);
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=8&data=${encodeURIComponent(link)}`;
+    const nodeImportUrl = `clash://install-config?url=${encodeURIComponent(clashUrl)}`;
+    return `<article class="node">
+<div class="qr"><img src="${escapeHtml(qrUrl)}" alt="${escapeHtml(node.name)} QR" loading="lazy"></div>
+<div class="node-info"><div class="node-title"><span>${escapeHtml(node.name)}</span><span class="badge">${escapeHtml(node.path)}</span></div>
+<code>${escapeHtml(node.uuid)}</code>
+<div class="node-actions"><button class="btn small" data-copy="${escapeHtml(link)}">复制节点</button><button class="btn small secondary" data-copy="${escapeHtml(clashUrl)}">复制订阅</button><a class="btn small secondary" href="${escapeHtml(nodeImportUrl)}">导入 Clash</a></div></div>
+</article>`;
+  }).join("\n");
   return `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Clash 订阅</title><style>
-:root{--bg:#f5f5f7;--c:#fff;--t:#1d1d1f;--m:#86868b;--a:#06c;--h:rgba(0,0,0,.08)}
-@media(prefers-color-scheme:dark){:root{--bg:#000;--c:#1c1c1e;--t:#f5f5f7;--m:#98989d;--a:#2997ff;--h:rgba(255,255,255,.1)}}
+:root{--bg:#f5f5f7;--surface:#fff;--text:#1d1d1f;--muted:#6e6e73;--line:#d2d2d7;--soft:#f2f2f7;--blue:#0071e3;--green:#16794a}
+@media(prefers-color-scheme:dark){:root{--bg:#000;--surface:#1c1c1e;--text:#f5f5f7;--muted:#98989d;--line:#3a3a3c;--soft:#2c2c2e;--blue:#2997ff;--green:#30a46c}}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--t);-webkit-font-smoothing:antialiased;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
-.card{background:var(--c);border-radius:20px;padding:40px 32px;max-width:480px;width:100%;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.04);border:1px solid var(--h)}
-h1{font-size:28px;font-weight:600;letter-spacing:-.3px;margin-bottom:4px}
-.dom{font-size:14px;color:var(--m);margin-bottom:28px}
-.url{font-family:monospace;font-size:13px;color:var(--a);background:var(--bg);padding:12px 16px;border-radius:10px;word-break:break-all;display:block;border:1px solid var(--h);margin-bottom:16px;text-align:left}
-.actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:12px 20px;border-radius:12px;border:none;font:inherit;font-size:15px;font-weight:500;cursor:pointer;background:var(--a);color:#fff;text-decoration:none}
-.btn.secondary{background:var(--bg);color:var(--t);border:1px solid var(--h)}
-.btn:hover{filter:brightness(1.06)}
-.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#1d1d1f;color:#fff;padding:10px 24px;border-radius:12px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:99}
+body{font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;min-height:100vh}
+.shell{max-width:1040px;margin:0 auto;padding:32px 20px 48px}
+header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:28px}
+h1{font-size:32px;font-weight:650;letter-spacing:-.4px;line-height:1.15}
+.subtitle{color:var(--muted);font-size:14px;margin-top:8px}
+.panel-link{color:var(--blue);text-decoration:none;font-size:14px;font-weight:550;padding:8px 0;white-space:nowrap}
+.panel-link:hover{text-decoration:underline}
+.clash-panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:26px}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}
+.title{font-size:22px;font-weight:650}
+.node-count{font-size:13px;color:var(--blue);background:var(--soft);border-radius:999px;padding:5px 10px;white-space:nowrap}
+.url-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:stretch}
+.url-box{min-width:0;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:13px 15px}
+.url-label{display:block;color:var(--muted);font-size:12px;margin-bottom:7px}
+.url{display:block;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;color:var(--text);white-space:nowrap;overflow-x:auto;padding-bottom:2px}
+.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:8px;font:inherit;font-weight:650;cursor:pointer;text-decoration:none;transition:filter .15s ease}
+.btn:hover{filter:brightness(1.08)}
+.copy-btn{min-width:88px;padding:0 20px;background:var(--blue);color:#fff;font-size:15px}
+.import-btn{width:100%;height:54px;margin-top:12px;background:var(--green);color:#fff;font-size:17px}
+.nodes-section{margin-top:28px}
+.nodes-header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px}
+.nodes-title{font-size:22px;font-weight:650}
+.node{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px;display:grid;grid-template-columns:180px minmax(0,1fr);gap:20px;margin-top:12px}
+.qr{width:180px;height:180px;background:var(--soft);border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.qr img{width:100%;height:100%;object-fit:contain}
+.node-info{min-width:0;display:flex;flex-direction:column;justify-content:center}
+.node-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:18px;font-weight:650;margin-bottom:10px}
+.badge{font-size:12px;color:var(--blue);background:var(--soft);padding:4px 8px;border-radius:999px;font-family:ui-monospace,monospace}
+.node code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--muted);word-break:break-all;line-height:1.5}
+.node-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.btn.small{padding:9px 13px;font-size:14px}
+.btn.secondary{background:var(--soft);color:var(--text);border:1px solid var(--line)}
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#1d1d1f;color:#fff;padding:10px 24px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:99}
 .toast.show{opacity:1}
-</style></head><body><div class="card">
-<h1>Clash 订阅</h1><div class="dom">${escapeHtml(baseUrl.replace(/^https?:\/\//, ""))} · ${NODES.length} 个节点</div>
-<code class="url">${escapeHtml(clashUrl)}</code>
-<div class="actions"><button class="btn" data-copy="${escapeHtml(clashUrl)}">复制订阅 URL</button><a class="btn secondary" href="${escapeHtml(panelUrl)}">打开节点面板</a></div>
+@media(max-width:640px){.shell{padding:24px 14px 36px}header{margin-bottom:22px}h1{font-size:26px}.clash-panel{padding:18px}.url-row{grid-template-columns:1fr}.copy-btn{height:46px}.import-btn{font-size:16px}}
+@media(max-width:680px){.node{grid-template-columns:1fr}.qr{width:156px;height:156px;margin:0 auto}.node-info{text-align:center}.node-title,.node-actions{justify-content:center}}
+</style></head><body><div class="shell">
+<header><div><h1>Clash 订阅</h1><div class="subtitle">${escapeHtml(host)} · ${NODES.length} 个节点</div></div><a class="panel-link" href="#nodes">节点列表</a></header>
+<main class="clash-panel"><div class="panel-head"><div class="title">订阅地址</div><div class="node-count">Clash Meta</div></div>
+<div class="url-row"><div class="url-box"><span class="url-label">Clash 订阅 URL</span><code class="url">${escapeHtml(clashUrl)}</code></div><button class="btn copy-btn" data-copy="${escapeHtml(clashUrl)}">复制</button></div>
+<a class="btn import-btn" href="${escapeHtml(importUrl)}">一键导入 Clash</a></main>
+<section class="nodes-section" id="nodes"><div class="nodes-header"><h2 class="nodes-title">节点列表</h2><span class="node-count">${NODES.length} 个节点</span></div>${cards}</section>
 </div><div class="toast" id="toast"></div><script>
 document.addEventListener("click",async(event)=>{const button=event.target.closest("[data-copy]");if(!button)return;try{await navigator.clipboard.writeText(button.dataset.copy);const toast=document.getElementById("toast");toast.textContent="已复制";toast.classList.add("show");setTimeout(()=>toast.classList.remove("show"),1600)}catch(error){window.prompt("复制链接",button.dataset.copy)}});
 </script></body></html>`;
@@ -353,11 +455,18 @@ server.on("upgrade", (req, socket, head) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`VLESS+WS server running on port ${PORT}`);
-  console.log(`Node paths: ${NODES.map((node) => node.path).join(", ")}`);
-  if (LEGACY_WS_PATH !== NODES[0].path) console.log(`Legacy path: ${LEGACY_WS_PATH} -> node 1`);
-  console.log(`UUIDs: ${UUID_LIST.join(", ")}`);
-  console.log(`Panel: /panel${SUB_TOKEN ? "?token=***" : ""}`);
-  console.log(`Subscription: /sub${SUB_TOKEN ? "?token=***" : ""}`);
-});
+async function start() {
+  applyRegion(await detectRegion());
+
+  server.listen(PORT, () => {
+    console.log(`VLESS+WS server running on port ${PORT}`);
+    console.log(`Region: ${REGION.name || "unknown"}${REGION.code ? ` (${REGION.code})` : ""}`);
+    console.log(`Node paths: ${NODES.map((node) => node.path).join(", ")}`);
+    if (LEGACY_WS_PATH !== NODES[0].path) console.log(`Legacy path: ${LEGACY_WS_PATH} -> node 1`);
+    console.log(`UUIDs: ${UUID_LIST.join(", ")}`);
+    console.log(`Dashboard: /${SUB_TOKEN ? "?token=***" : ""}`);
+    console.log(`Subscription: /sub${SUB_TOKEN ? "?token=***" : ""}`);
+  });
+}
+
+start();

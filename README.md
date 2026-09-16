@@ -28,8 +28,10 @@ SUB_TOKEN = mypassword
 
 | 地址 | 用途 |
 |------|------|
+| `https://域名/` | Clash 主页面、订阅导入与节点列表 |
 | `https://域名/panel` | 管理面板（二维码、一键导入 Clash） |
 | `https://域名/sub?format=clash` | Clash Meta 订阅 |
 | `https://域名/sub` | V2Ray 订阅（Base64） |
 
+节点名称会自动带上当前部署服务器的地区，例如 `infrlo-vless1 · 中国`。
 节点路径为 `/vless1` ~ `/vless5`，其中 `/vless` 始终兼容映射到节点 1。
