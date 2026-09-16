@@ -9,6 +9,12 @@ const MAX_NODES = 5;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const LEGACY_WS_PATH = process.env.WS_PATH || "/vless";
 const SUB_TOKEN = process.env.SUB_TOKEN || "";
+const parsedTrafficTotalGb = Number.parseFloat(process.env.TRAFFIC_TOTAL_GB);
+const TRAFFIC_TOTAL_GB = Number.isFinite(parsedTrafficTotalGb) && parsedTrafficTotalGb >= 0 ? parsedTrafficTotalGb : 60;
+const TRAFFIC_TOTAL_BYTES = Math.round(TRAFFIC_TOTAL_GB * 1024 ** 3);
+const TRAFFIC_EXPIRE = Math.max(0, parseInt(process.env.TRAFFIC_EXPIRE, 10) || 0);
+const WS_MAX_PAYLOAD = 4 * 1024 * 1024;
+const WS_BUFFER_LIMIT = 512 * 1024;
 const REGION = { code: "", name: "" };
 
 function uuidToBytes(uuid) {
@@ -166,7 +172,29 @@ function addTraffic(nodeIndex, direction, bytes) {
   if (direction === "download") nodeStats.downloadBytes += bytes;
 }
 
+function getTrafficTotals() {
+  const totals = { uploadBytes: 0, downloadBytes: 0, totalBytes: 0, activeConnections: 0, connections: 0 };
+  for (const node of STATS.nodes) {
+    totals.uploadBytes += node.uploadBytes;
+    totals.downloadBytes += node.downloadBytes;
+    totals.totalBytes += node.uploadBytes + node.downloadBytes;
+    totals.activeConnections += node.activeConnections;
+    totals.connections += node.connections;
+  }
+  return totals;
+}
+
+function subscriptionHeaders(contentType) {
+  const totals = getTrafficTotals();
+  return {
+    "Content-Type": contentType,
+    "Cache-Control": "no-store",
+    "Subscription-Userinfo": `upload=${totals.uploadBytes}; download=${totals.downloadBytes}; total=${TRAFFIC_TOTAL_BYTES}; expire=${TRAFFIC_EXPIRE}`,
+  };
+}
+
 function getStatsSnapshot() {
+
   const nodes = STATS.nodes.map((nodeStats, index) => {
     const node = NODES[index];
     const totalBytes = nodeStats.uploadBytes + nodeStats.downloadBytes;
@@ -181,13 +209,7 @@ function getStatsSnapshot() {
     };
   });
 
-  const totals = nodes.reduce((summary, node) => ({
-    uploadBytes: summary.uploadBytes + node.uploadBytes,
-    downloadBytes: summary.downloadBytes + node.downloadBytes,
-    totalBytes: summary.totalBytes + node.totalBytes,
-    activeConnections: summary.activeConnections + node.activeConnections,
-    connections: summary.connections + node.connections,
-  }), { uploadBytes: 0, downloadBytes: 0, totalBytes: 0, activeConnections: 0, connections: 0 });
+  const totals = getTrafficTotals();
 
   return {
     startedAt: STATS.startedAt,
@@ -380,11 +402,11 @@ const server = http.createServer((req, res) => {
     if (!checkAuth(url, res)) return;
     const host = req.headers.host || `localhost:${PORT}`;
     if (url.searchParams.get("format") === "clash") {
-      res.writeHead(200, { "Content-Type": "text/yaml; charset=utf-8" });
+      res.writeHead(200, subscriptionHeaders("text/yaml; charset=utf-8"));
       return res.end(clashSub(host));
     }
     const links = NODES.map((node) => vlessLink(host, node)).join("\n");
-    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+    res.writeHead(200, subscriptionHeaders("text/plain; charset=utf-8"));
     return res.end(Buffer.from(links).toString("base64"));
   }
 
@@ -393,6 +415,8 @@ const server = http.createServer((req, res) => {
 });
 
 function handleVLESS(ws, expectedUuidBytes, nodeIndex) {
+  // Oversized frames can error before the handshake creates a TCP socket.
+  ws.on("error", () => {});
   ws.once("message", (data, isBinary) => {
     if (!isBinary) {
       ws.close(1008, "Binary required");
@@ -459,10 +483,12 @@ function handleVLESS(ws, expectedUuidBytes, nodeIndex) {
       ws.send(Buffer.from([0x00, 0x00]));
       if (payload.length > 0) tcp.write(payload);
       tcp.on("data", (chunk) => {
-        if (ws.readyState === ws.OPEN) {
-          ws.send(chunk);
-          addTraffic(nodeIndex, "download", chunk.length);
-        }
+        if (ws.readyState !== ws.OPEN) return;
+        if (ws.bufferedAmount >= WS_BUFFER_LIMIT) tcp.pause();
+        ws.send(chunk, { binary: true }, () => {
+          if (tcp.isPaused()) tcp.resume();
+        });
+        addTraffic(nodeIndex, "download", chunk.length);
       });
     });
 
@@ -480,9 +506,11 @@ function handleVLESS(ws, expectedUuidBytes, nodeIndex) {
     });
     ws.on("message", (chunk) => {
       const dataBuffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      if (tcp.writable) {
-        tcp.write(dataBuffer);
-        addTraffic(nodeIndex, "upload", dataBuffer.length);
+      if (!tcp.writable) return;
+      addTraffic(nodeIndex, "upload", dataBuffer.length);
+      if (!tcp.write(dataBuffer)) {
+        ws.pause();
+        tcp.once("drain", () => ws.resume());
       }
     });
     ws.on("close", () => {
@@ -496,7 +524,12 @@ function handleVLESS(ws, expectedUuidBytes, nodeIndex) {
   });
 }
 
-const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({
+  noServer: true,
+  clientTracking: false,
+  perMessageDeflate: false,
+  maxPayload: WS_MAX_PAYLOAD,
+});
 
 server.on("upgrade", (req, socket, head) => {
   let pathname;

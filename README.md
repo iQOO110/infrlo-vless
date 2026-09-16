@@ -17,6 +17,8 @@ VLESS over WebSocket，部署到 [Infrlo](https://infrlo.com) 免费套餐。
 |------|------|
 | `UUID` | VLESS 节点 UUID，逗号分隔最多 5 个。不足 5 个时基于第一个 UUID 稳定派生补足 |
 | `SUB_TOKEN` | 订阅接口访问密码，不设则公开 |
+| `TRAFFIC_TOTAL_GB` | Clash 显示的套餐总流量，默认 `60` GB |
+| `TRAFFIC_EXPIRE` | 套餐到期 Unix 时间戳（秒），默认 `0` |
 
 示例：
 ```
@@ -31,6 +33,12 @@ SUB_TOKEN = mypassword
 | `https://域名/` | Clash 主页面、VLESS 全部节点订阅与二维码 |
 | `https://域名/sub?format=clash` | Clash Meta 订阅 |
 | `https://域名/sub` | V2Ray 订阅（Base64） |
+| `https://域名/api/stats` | 按节点统计的实时流量 JSON 接口 |
+
+首页每 5 秒刷新一次流量统计，包含上传、下载、当前连接和累计连接。
+统计数据只保存在当前进程内存中，服务重启或部署后从零开始累计。
+订阅响应会附带 `Subscription-Userinfo`，Clash / Mihomo 可直接显示已用流量。该数值同样从本次进程启动开始累计；套餐总量默认按 60 GB 展示，可通过环境变量调整。
+转发连接启用 4 MB 单消息上限和双向背压，避免慢连接持续占用内存。统计仅在内存中维护固定数量的节点计数器，不引入数据库或后台服务。
 
 节点名称会自动带上当前部署服务器的地区，例如 `infrlo-vless1 · 中国`。
 节点路径为 `/vless1` ~ `/vless5`，其中 `/vless` 始终兼容映射到节点 1。
