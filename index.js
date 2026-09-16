@@ -204,50 +204,59 @@ function homePage(req) {
   const baseUrl = getBaseUrl(req);
   const clashUrl = buildUrl(baseUrl, "/sub", "clash");
   const importUrl = `clash://install-config?url=${encodeURIComponent(clashUrl)}`;
-  const host = baseUrl.replace(/^https?:\/\//, "");
   const v2rayUrl = buildUrl(baseUrl, "/sub");
+  const region = REGION.name || "地区识别中";
   const vlessQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=8&data=${encodeURIComponent(v2rayUrl)}`;
-  return `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Clash 订阅</title><style>
-:root{--bg:#f5f5f7;--surface:#fff;--text:#1d1d1f;--muted:#6e6e73;--line:#d2d2d7;--soft:#f2f2f7;--blue:#0071e3;--green:#16794a}
-@media(prefers-color-scheme:dark){:root{--bg:#000;--surface:#1c1c1e;--text:#f5f5f7;--muted:#98989d;--line:#3a3a3c;--soft:#2c2c2e;--blue:#2997ff;--green:#30a46c}}
+  return `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Infrlo VLESS 订阅</title><style>
+:root{--bg:#07101f;--card:#111c2f;--surface:#0b1526;--line:#22314a;--text:#f4f7fb;--muted:#98a6bb;--blue:#2f72f6;--green:#24c38a;--copy:#24344e}
+
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;min-height:100vh}
-.shell{max-width:760px;margin:0 auto;padding:36px 20px 44px}
-header{margin-bottom:24px}
-h1{font-size:30px;font-weight:650;letter-spacing:-.4px;line-height:1.15}
-.subtitle{color:var(--muted);font-size:14px;margin-top:7px}
-.panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:22px;margin-top:20px}
-main.panel{margin-top:0}
-section.panel{margin-top:24px}
-.panel-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px}
-.title{font-size:20px;font-weight:650}
-.badge{font-size:12px;color:var(--blue);background:var(--soft);border-radius:999px;padding:5px 10px;white-space:nowrap}
-.url-row{min-width:0}
-.url-box{min-width:0;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
-.url-label{display:block;color:var(--muted);font-size:12px;margin-bottom:6px}
-.url{display:block;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:var(--text);white-space:nowrap;overflow-x:auto;padding-bottom:2px}
-.btn{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:0 14px;border:0;border-radius:7px;font:inherit;font-size:13px;font-weight:650;cursor:pointer;text-decoration:none;transition:filter .15s ease}
+body{font-family:-apple-system,system-ui,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;min-height:100vh}
+.shell{max-width:900px;margin:0 auto;padding:40px 24px 48px}
+header{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;padding-bottom:22px;border-bottom:1px solid var(--line);margin-bottom:24px}
+.brand{display:flex;align-items:center;gap:12px}
+.brand-mark{width:34px;height:34px;border-radius:9px;background:var(--blue);display:grid;place-items:center;font-size:16px;font-weight:750;color:#fff;flex:0 0 auto}
+h1{font-size:28px;font-weight:700;letter-spacing:-.3px;line-height:1.2}
+.subtitle{color:var(--muted);font-size:14px;margin-top:5px}
+.status{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border:1px solid #1e614c;border-radius:999px;background:#0c2926;color:#4ce0a7;font-size:12px;font-weight:650;white-space:nowrap}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(36,195,138,.12)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:24px}
+.section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:22px}
+h2{font-size:19px;font-weight:700}
+.section-copy{color:var(--muted);font-size:13px;line-height:1.6;margin-top:6px}
+.region{display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;background:#172844;color:#9fc1ff;font-size:12px;white-space:nowrap}
+.service{padding:2px 0}
+.service-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:12px}
+.service-title{display:flex;align-items:center;gap:9px;font-size:16px;font-weight:700}
+.clash-mark{width:22px;height:22px;border-radius:6px;background:#2563eb;display:grid;place-items:center;color:#fff;font-size:11px;font-weight:750;flex:0 0 auto}
+.service-copy{color:var(--muted);font-size:13px;line-height:1.65;margin-top:7px;max-width:650px}
+.field-label{display:block;color:var(--muted);font-size:12px;margin-bottom:7px}
+.url-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:stretch}
+.url{display:flex;align-items:center;min-width:0;min-height:40px;padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:7px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:#dbe5f2;white-space:nowrap;overflow-x:auto}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:0 14px;border:0;border-radius:7px;font:inherit;font-size:13px;font-weight:650;cursor:pointer;text-decoration:none;transition:background .15s ease,filter .15s ease;white-space:nowrap}
 .btn:hover{filter:brightness(1.08)}
-.copy-btn{background:var(--blue);color:#fff}
-.import-btn{background:var(--green);color:#fff}
-.panel-actions{display:flex;gap:8px;margin-top:10px}
-.vless-body{display:flex;flex-direction:column;gap:22px}
-.vless-body .copy-btn{align-self:flex-start}
-.qr{width:180px;height:180px;background:#fff;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;align-self:center}
+.import-btn{background:var(--blue);color:#fff}
+.copy-btn{background:var(--copy);color:var(--text);border:1px solid #334563}
+.divider{height:1px;background:var(--line);margin:24px 0}
+.vless-layout{display:grid;grid-template-columns:180px minmax(0,1fr);gap:28px;align-items:center;margin-top:16px}
+.qr-wrap{display:flex;flex-direction:column;align-items:center;gap:9px}
+.qr{width:168px;height:168px;background:#fff;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.qr-caption{color:var(--muted);font-size:12px;text-align:center}
 .qr img{width:100%;height:100%;object-fit:contain}
-.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#1d1d1f;color:#fff;padding:10px 24px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:99}
+footer{color:#718096;font-size:12px;line-height:1.6;text-align:center;margin-top:20px}
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#eff6ff;color:#0b1526;padding:9px 20px;border-radius:7px;font-size:13px;font-weight:650;opacity:0;transition:opacity .2s;pointer-events:none;z-index:99}
 .toast.show{opacity:1}
-@media(max-width:640px){.shell{padding:24px 14px 36px}h1{font-size:26px}.panel{padding:17px}.panel-actions{flex-wrap:wrap}.qr{width:156px;height:156px}}
+@media(max-width:640px){.shell{padding:28px 16px 40px}header{display:block}h1{font-size:23px}.status{margin-top:16px}.card{padding:18px}.section-head{display:block}.region{margin-top:10px}.service-head{display:block}.import-btn{margin-top:12px}.vless-layout{grid-template-columns:1fr;gap:22px}.url{font-size:12px}}
 </style></head><body><div class="shell">
-<header><h1>Clash 订阅</h1><div class="subtitle">${escapeHtml(host)} · ${NODES.length} 个节点 · ${escapeHtml(REGION.name || "地区检测中")}</div></header>
-<main class="panel"><div class="panel-head"><div class="title">Clash</div><div class="badge">全部节点</div></div>
-<div class="url-row"><div class="url-box"><span class="url-label">Clash 订阅 URL</span><code class="url">${escapeHtml(clashUrl)}</code></div></div>
-<div class="panel-actions"><button class="btn copy-btn" data-copy="${escapeHtml(clashUrl)}">复制</button><a class="btn import-btn" href="${escapeHtml(importUrl)}">一键导入 Clash</a></div>
-</main>
-<section class="panel"><div class="panel-head"><div class="title">VLESS 全部节点</div><div class="badge">1 个订阅</div></div>
-<div class="vless-body"><div class="qr"><img src="${escapeHtml(vlessQrUrl)}" alt="VLESS 全部节点二维码"></div>
-<div class="url-row"><div class="url-box"><span class="url-label">VLESS 订阅 URL</span><code class="url">${escapeHtml(v2rayUrl)}</code></div></div>
-<button class="btn copy-btn" data-copy="${escapeHtml(v2rayUrl)}">复制订阅</button></div></section>
+<header><div class="brand"><div class="brand-mark">C</div><div><h1>Infrlo VLESS</h1><div class="subtitle">Clash / Mihomo / 通用客户端订阅</div></div></div><div class="status"><span class="status-dot"></span>服务运行正常</div></header>
+<main class="card"><div class="section-head"><div><h2>订阅导入</h2><div class="section-copy">选择适合你客户端的方式，以下地址均包含 ${NODES.length} 个节点。</div></div><div class="region">${escapeHtml(region)}</div></div>
+<article class="service"><div class="service-head"><div><div class="service-title"><span class="clash-mark">C</span><span>Clash / Mihomo</span></div><div class="service-copy">适用于 Clash Verge、Clash Meta 和 Mihomo，导入后自动包含全部节点。</div></div><a class="btn import-btn" href="${escapeHtml(importUrl)}">导入 Clash</a></div>
+<label class="field-label">Clash 订阅地址</label><div class="url-row"><code class="url">${escapeHtml(clashUrl)}</code><button class="btn copy-btn" data-copy="${escapeHtml(clashUrl)}">复制</button></div></article>
+<div class="divider"></div>
+<article class="service"><div class="service-head"><div><div class="service-title">通用订阅</div><div class="service-copy">适用于 Shadowrocket、v2rayN、Sing-box 等客户端，扫码或复制地址即可导入全部节点。</div></div></div>
+<div class="vless-layout"><div class="qr-wrap"><div class="qr"><img src="${escapeHtml(vlessQrUrl)}" alt="通用订阅二维码"></div><div class="qr-caption">扫码导入全部节点</div></div>
+<div><label class="field-label">通用订阅地址</label><div class="url-row"><code class="url">${escapeHtml(v2rayUrl)}</code><button class="btn copy-btn" data-copy="${escapeHtml(v2rayUrl)}">复制</button></div></div></div></article>
+</main><footer>节点名称会按服务器地区自动更新，订阅内容共 ${NODES.length} 个节点。</footer>
 </div><div class="toast" id="toast"></div><script>
 document.addEventListener("click",async(event)=>{const button=event.target.closest("[data-copy]");if(!button)return;try{await navigator.clipboard.writeText(button.dataset.copy);const toast=document.getElementById("toast");toast.textContent="已复制";toast.classList.add("show");setTimeout(()=>toast.classList.remove("show"),1600)}catch(error){window.prompt("复制链接",button.dataset.copy)}});
 </script></body></html>`;
