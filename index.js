@@ -133,7 +133,7 @@ function clashSub(host) {
     "      - DIRECT",
     "rules:",
     "  - GEOIP,CN,DIRECT",
-    `  - MATCH,${yaml("代理")}`,
+    "  - MATCH,代理",
   ].join("\n");
 }
 
